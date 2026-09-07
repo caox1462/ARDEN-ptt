@@ -1,0 +1,42 @@
+#!/bin/sh /etc/rc.common
+# Copyright (C) 2006 OpenWrt.org
+
+START=99
+boot() {
+
+  # run mode specific setup
+  [ -x /etc/config/local ] && /etc/config/local
+  [ -x /etc/local/services ] && /etc/local/services
+
+  # set POE passthrough if available
+  local poevalue=$(uci -q get aredn.@poe[0].passthrough)
+  if [ -z "$poevalue" ]; then
+    local dpval=$(jsonfilter -e '@.gpioswitch.poe_passthrough.default' < /etc/board.json)
+    if [ ! -z "$dpval" ]; then
+      uci -q set aredn.@poe[0].passthrough="$dpval"
+      uci -q commit aredn
+      poevalue=$dpval
+    fi
+  fi
+  /usr/local/bin/poe_passthrough "${poevalue}"
+
+  # set USB passthrough if available
+  local usbvalue=$(uci -q get aredn.@usb[0].passthrough)
+  if [ -z "$usbvalue" ]; then
+    local duval=$(jsonfilter -e '@.gpioswitch.usb_power_switch.default' < /etc/board.json)
+    uci -q set aredn.@usb[0].passthrough="$duval"
+    uci -q commit aredn
+    usbvalue=$duval
+  fi
+  /usr/local/bin/usb_passthrough "${usbvalue}"
+
+  # package repositories
+  local packages_default=$(uci -q get "aredn.@downloads[0].packages_default")
+  if [ "${packages_default}" != "" ]; then
+    (cat /etc/apk/repositories.d/distfeeds.list | while read line; do
+      local prefixurl=$(echo $line | sed -n 's/\(http[s]\?:\/\/[^/]\+\).*/\1/p')
+      echo $line | sed "s|$prefixurl|$packages_default|"
+    done) > /etc/apk/repositories.d/distfeeds.list.new
+    mv -f /etc/apk/repositories.d/distfeeds.list.new /etc/apk/repositories.d/distfeeds.list
+  fi
+}

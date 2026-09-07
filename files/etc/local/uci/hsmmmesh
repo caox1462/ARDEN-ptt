@@ -1,0 +1,5 @@
+config settings 'settings'
+        option node ''
+        option tactical ''
+        option mac2 ''
+        option configured '0'

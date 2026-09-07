@@ -1,0 +1,14 @@
+
+# Results of the testscripts
+/results/
+
+# Files created during make
+.stamp*
+firmware
+openwrt/
+
+# Other
+.DS_Store
+._.DS_Store
+saved/
+.vscode

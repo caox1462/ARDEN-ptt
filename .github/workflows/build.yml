@@ -1,0 +1,43 @@
+name: build-firmware
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
+            gettext git libncurses-dev libssl-dev python3-setuptools python3-dev \
+            rsync swig unzip zlib1g-dev quilt file wget curl time subversion
+
+      - name: Build firmware (ramips-mt76x8-morse)
+        run: |
+          make TARGET=ramips-mt76x8-morse PRIVATE_BUILD_VERSION=PTT-dev MAKE_ARGS="-j$(nproc)"
+
+      - name: Collect artifacts
+        if: always()
+        run: |
+          mkdir -p out
+          cp firmware/targets/ramips/mt76x8/*-sysupgrade.bin out/ 2>/dev/null || true
+          cp firmware/targets/ramips/mt76x8/sha256sums out/ 2>/dev/null || true
+          cp openwrt/.config out/build-config.txt 2>/dev/null || true
+          ls -la out/ || true
+
+      - name: Upload firmware artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-ramips-mt76x8-morse
+          path: out/
+          if-no-files-found: warn
