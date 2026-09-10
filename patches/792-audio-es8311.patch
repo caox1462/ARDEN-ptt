@@ -6,9 +6,7 @@ MT7628 I2S peripheral on GPIO0-3 (SoM pins 17-20). A ES8311 codec plus
 NS4150B amplifier module is attached to the I2S bus and I2C0 (addr 0x18).
 
 This wires up the codec via device-tree and the generic simple-audio-card
-machine driver so the kernel registers a sound card at boot. All drivers
-are built as the kmod-sound-ralink-es8311 package added to
-target/linux/ramips/modules.mk:
+machine driver so the kernel registers a sound card at boot:
 
   - remove the "morse-mode-switch" gpio-export on gpio2 (I2S_WS pin)
   - mux GPIO0-3 to their I2S function via the i2s_pins pinctrl group
@@ -17,8 +15,12 @@ target/linux/ramips/modules.mk:
   - register a simple-audio-card with the ralink I2S DAI as bit-clock and
     frame master and the codec as slave
 
-The package is enabled in configs/ramips-mt76x8-morse.config together
-with alsa-utils (amixer/aplay/speaker-test) for user-space testing.
+The ralink I2S DAI and simple-card machine driver are packaged by the
+upstream kmod-sound-mt7620; this only adds a small kmod-sound-es8311 for
+the codec itself (a large custom kmod claiming the same .ko files as
+kmod-sound-mt7620 makes the build fail with "modules claimed by multiple
+packages"). Both packages are enabled in
+configs/ramips-mt76x8-morse.config together with alsa-utils.
 
 --- a/target/linux/ramips/dts/mt7628an_morse_ekh03.dtsi
 +++ b/target/linux/ramips/dts/mt7628an_morse_ekh03.dtsi
@@ -72,31 +74,26 @@ with alsa-utils (amixer/aplay/speaker-test) for user-space testing.
  &gdma {
 --- a/target/linux/ramips/modules.mk
 +++ b/target/linux/ramips/modules.mk
-@@ -172,3 +172,27 @@
+@@ -172,3 +172,22 @@
  endef
  
  $(eval $(call KernelPackage,keyboard-sx951x))
 +
-+define KernelPackage/sound-ralink-es8311
++define KernelPackage/sound-es8311
 +  SUBMENU:=Other modules
-+  TITLE:=Ralink I2S + ES8311 codec sound card
-+  DEPENDS:=@TARGET_ramips_mt76x8 +kmod-sound-soc-core +kmod-i2c-mt7628 +kmod-dma-ralink
++  TITLE:=Everest Semi ES8311 codec
++  DEPENDS:=@TARGET_ramips_mt76x8 +kmod-sound-soc-core +kmod-sound-mt7620
 +  KCONFIG:= \
-+	CONFIG_SND_RALINK_SOC_I2S \
-+	CONFIG_SND_SOC_ES8311 \
-+	CONFIG_SND_SIMPLE_CARD \
-+	CONFIG_SND_SIMPLE_CARD_UTILS
++	CONFIG_SND_SOC_ES8311
 +  FILES:= \
-+	$(LINUX_DIR)/sound/soc/ralink/snd-soc-ralink-i2s.ko \
-+	$(LINUX_DIR)/sound/soc/codecs/snd-soc-es8311.ko \
-+	$(LINUX_DIR)/sound/soc/generic/snd-soc-simple-card.ko \
-+	$(LINUX_DIR)/sound/soc/generic/snd-soc-simple-card-utils.ko
-+  AUTOLOAD:=$(call AutoLoad,90,snd-soc-simple-card snd-soc-ralink-i2s snd-soc-es8311)
++	$(LINUX_DIR)/sound/soc/codecs/snd-soc-es8311.ko
++  AUTOLOAD:=$(call AutoLoad,91,snd-soc-es8311)
 +endef
 +
-+define KernelPackage/sound-ralink-es8311/description
-+ ES8311 audio codec over the MT7628 I2S interface. The sound card is
-+ registered from device-tree via the simple-audio-card binding.
++define KernelPackage/sound-es8311/description
++ ES8311 audio codec driver. Enabled in device-tree on the morse ekh03
++ boards (i2c0 addr 0x18) and registered as a simple-audio-card together
++ with the ralink I2S DAI (kmod-sound-mt7620).
 +endef
 +
-+$(eval $(call KernelPackage,sound-ralink-es8311))
++$(eval $(call KernelPackage,sound-es8311))
