@@ -1,0 +1,20 @@
+From: PTT-dev
+Subject: [PATCH] ramips: fix ralink-i2s refclk pad-setup register corruption
+
+mt7628_refclk_setup() intends to set bit 5 of sysc reg 0x1364, but writes
+"data |= ~(0x1 << 5)" which ORs 0xffffffdf into the register, clobbering
+every other bit (GPIO1 pull configuration on MT7628).
+
+Use the intended single-bit OR.
+
+--- a/sound/soc/ralink/ralink-i2s.c
++++ b/sound/soc/ralink/ralink-i2s.c
+@@ -737,7 +737,7 @@
+ 	data &= ~(0x1 << 5);
+ 	rt_sysc_w32(data, 0x1354);
+ 	data = rt_sysc_r32(0x1364);
+-	data |= ~(0x1 << 5);
++	data |= (0x1 << 5);
+ 	rt_sysc_w32(data, 0x1364);
+ 
+ 	/* set refclk output 12Mhz clock */
