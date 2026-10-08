@@ -1,0 +1,87 @@
+From: PTT-dev
+Subject: [PATCH] ramips: wire GDMA slave request lines via DT
+
+The ralink GDMA driver lost its request-line wiring when upstream removed
+dma_slave_config.slave_id: of_dma_xlate_by_chan_id() only maps the DT cell
+to a channel id, so chan->slave_id stays 0 and every slave transfer is
+programmed to wait on request line 0 instead of the peripheral line.
+
+For MT7628 I2S playback this means DST_REQ=0 (an unnamed request line)
+instead of DMA_I2S_TX_REQ=2, so the DMA never starts and audio output
+hangs/starves the system.
+
+Give the driver its own of_dma_xlate that takes an optional second DT
+cell as the request line, switch the mt7628 gdma node to two cells and
+wire the I2S node accordingly (tx = channel 4 / REQ 2, rx = channel 6 /
+REQ 3, per the vendor SDK). One-cell users (rt305x/rt3883/mt7620 dtsi)
+keep working.
+
+---
+--- a/target/linux/ramips/dts/mt7628an.dtsi
++++ b/target/linux/ramips/dts/mt7628an.dtsi
+@@ -138,8 +138,8 @@
+ 			txdma-req = <2>;
+ 			rxdma-req = <3>;
+ 
+-			dmas = <&gdma 4>,
+-				<&gdma 6>;
++			dmas = <&gdma 4 2>,
++				<&gdma 6 3>;
+ 			dma-names = "tx", "rx";
+ 
+ 			status = "disabled";
+@@ -259,7 +259,7 @@
+ 			interrupt-parent = <&intc>;
+ 			interrupts = <7>;
+ 
+-			#dma-cells = <1>;
++			#dma-cells = <2>;
+ 			#dma-channels = <16>;
+ 			#dma-requests = <16>;
+ 
+--- a/target/linux/ramips/files/drivers/dma/ralink-gdma.c
++++ b/target/linux/ramips/files/drivers/dma/ralink-gdma.c
+@@ -787,6 +787,34 @@
+ };
+ MODULE_DEVICE_TABLE(of, gdma_of_match_table);
+ 
++static struct dma_chan *gdma_of_dma_xlate(struct of_phandle_args *dma_spec,
++					  struct of_dma *ofdma)
++{
++	struct gdma_dma_dev *dma_dev = ofdma->of_dma_data;
++	unsigned int chan_id, req = 0;
++	struct gdma_dmaengine_chan *chan;
++
++	if (!dma_dev || !dma_spec->args_count || dma_spec->args_count > 2)
++		return NULL;
++
++	chan_id = dma_spec->args[0];
++	if (chan_id >= dma_dev->data->chancnt)
++		return NULL;
++
++	/*
++	 * Cell 1 (optional) is the peripheral request line. The memory
++	 * side always uses DMA_MEM_REQ (32), the slave side must not
++	 * stay on request line 0 or the transfer never starts.
++	 */
++	if (dma_spec->args_count == 2)
++		req = dma_spec->args[1];
++
++	chan = &dma_dev->chan[chan_id];
++	chan->slave_id = req;
++
++	return dma_get_slave_channel(&chan->vchan.chan);
++}
++
+ static int gdma_dma_probe(struct platform_device *pdev)
+ {
+ 	const struct of_device_id *match;
+@@ -875,7 +903,7 @@
+ 	}
+ 
+ 	ret = of_dma_controller_register(pdev->dev.of_node,
+-					 of_dma_xlate_by_chan_id, dma_dev);
++					 gdma_of_dma_xlate, dma_dev);
+ 	if (ret) {
+ 		dev_err(&pdev->dev, "failed to register of dma controller\n");
+ 		goto err_unregister;
